@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/orijtech/cosmosloadtester/pkg/errors"
+	"github.com/orijtech/cosmosloadtester/pkg/logger"
 	"github.com/informalsystems/tm-load-test/pkg/loadtest"
 )
 
@@ -30,12 +32,21 @@ type CLI struct {
 
 // NewCLI creates a new CLI instance
 func NewCLI() (*CLI, error) {
+	log := logger.WithComponent("cli_initialization")
+	
+	log.Debug("Initializing CLI")
+	
 	configManager, err := NewConfigManager()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize config manager: %w", err)
+		return nil, errors.WrapError(err, errors.ErrorTypeConfig,
+			errors.ErrCodeInvalidConfig, "failed to initialize config manager")
 	}
 
-	return &CLI{configManager: configManager}, nil
+	log.Debug("CLI initialized successfully")
+	
+	return &CLI{
+		configManager: configManager,
+	}, nil
 }
 
 // Run processes CLI commands and flags

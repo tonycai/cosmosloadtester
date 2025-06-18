@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -19,10 +18,12 @@ import (
 	"github.com/fatih/color"
 	"github.com/informalsystems/tm-load-test/pkg/loadtest"
 	"github.com/schollz/progressbar/v3"
-	"github.com/sirupsen/logrus"
 
 	"github.com/orijtech/cosmosloadtester/clients/aiw3defi"
 	"github.com/orijtech/cosmosloadtester/clients/myabciapp"
+	"github.com/orijtech/cosmosloadtester/pkg/errors"
+	"github.com/orijtech/cosmosloadtester/pkg/logger"
+	"github.com/orijtech/cosmosloadtester/pkg/recovery"
 )
 
 // CLI flags
@@ -123,10 +124,26 @@ type ProgressReporter struct {
 }
 
 func main() {
+	// Initialize recovery handler first
+	defer func() {
+		if err := recovery.Recover(); err != nil {
+			fmt.Fprintf(os.Stderr, "Fatal error: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+
 	flag.Parse()
 
-	// Setup logging
-	setupLogging()
+	// Setup logging system
+	log, err := setupLogging()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to setup logging: %v\n", err)
+		os.Exit(1)
+	}
+	
+	// Set global logger and recovery handler
+	logger.SetGlobalLogger(log)
+	recovery.SetGlobalRecoveryHandler(recovery.NewRecoveryHandler(log))
 
 	// Show version
 	if *showVersion {
@@ -139,9 +156,9 @@ func main() {
 		color.Cyan(banner)
 	}
 
-	// Register client factories
+	// Register client factories with error handling
 	if err := registerClientFactories(); err != nil {
-		log.Fatalf("Failed to register client factories: %v", err)
+		log.WithError(err).Fatal("Failed to register client factories")
 	}
 
 	// List factories if requested
@@ -150,15 +167,18 @@ func main() {
 		return
 	}
 
-	// Initialize enhanced CLI
+	// Initialize enhanced CLI with error handling
 	cli, err := NewCLI()
 	if err != nil {
-		log.Fatalf("Failed to initialize CLI: %v", err)
+		log.WithError(err).Fatal("Failed to initialize CLI")
 	}
 
-	// Process CLI commands first
-	if err := cli.Run(); err != nil {
-		log.Fatalf("CLI command failed: %v", err)
+	// Process CLI commands first with recovery
+	err = recovery.SafeExecute(func() error {
+		return cli.Run()
+	})
+	if err != nil {
+		log.WithError(err).Fatal("CLI command failed")
 	}
 
 	// If no CLI commands were processed, run standard load test
@@ -166,15 +186,18 @@ func main() {
 		return
 	}
 
-	// Validate configuration
+	// Validate configuration with structured error handling
 	config, err := buildConfig()
 	if err != nil {
-		log.Fatalf("Invalid configuration: %v", err)
+		log.WithError(err).Fatal("Invalid configuration")
 	}
 
-	// Run load test
-	if err := runLoadTest(config); err != nil {
-		log.Fatalf("Load test failed: %v", err)
+	// Run load test with recovery
+	err = recovery.SafeExecute(func() error {
+		return runLoadTest(config)
+	})
+	if err != nil {
+		log.WithError(err).Fatal("Load test failed")
 	}
 }
 
@@ -192,34 +215,58 @@ func shouldRunStandardLoadTest() bool {
 	return *profile != "" || *endpoints != ""
 }
 
-func setupLogging() {
-	level, err := logrus.ParseLevel(*logLevel)
-	if err != nil {
-		log.Fatalf("Invalid log level: %v", err)
+func setupLogging() (logger.Logger, error) {
+	// Create logger config from CLI flags
+	config := &logger.Config{
+		Level:     logger.LogLevel(*logLevel),
+		Format:    logger.TextFormat,
+		Output:    "stdout",
+		AddSource: false,
 	}
-	logrus.SetLevel(level)
-	logrus.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-		DisableColors: false,
-	})
+	
+	// Use JSON format if quiet mode is enabled
+	if *quiet {
+		config.Format = logger.JSONFormat
+		config.Output = "stderr"
+	}
+	
+	// Create structured logger
+	structuredLogger, err := logger.NewLogger(config)
+	if err != nil {
+		return nil, errors.WrapError(err, errors.ErrorTypeConfig, 
+			errors.ErrCodeInvalidConfig, "failed to create logger")
+	}
+	
+	return structuredLogger, nil
 }
 
 func registerClientFactories() error {
+	log := logger.WithComponent("client_factory_registration")
+	
 	cdc := codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
 	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
 
 	// Register the default test client factory
+	log.Debug("Registering test-cosmos-client-factory")
 	cosmosClientFactory := myabciapp.NewCosmosClientFactory(txConfig)
 	if err := loadtest.RegisterClientFactory("test-cosmos-client-factory", cosmosClientFactory); err != nil {
-		return fmt.Errorf("failed to register client factory %s: %w", "test-cosmos-client-factory", err)
+		return errors.NewClientFactoryError(errors.ErrCodeClientFactoryNotFound,
+			"failed to register test-cosmos-client-factory").
+			WithContext("factory_name", "test-cosmos-client-factory").
+			WithDetails(err.Error())
 	}
 
 	// Register the AIW3 DeFi client factory
+	log.Debug("Registering aiw3defi-bank-send")
 	aiw3defiClientFactory := aiw3defi.NewAIW3DefiClientFactory(txConfig)
 	if err := loadtest.RegisterClientFactory("aiw3defi-bank-send", aiw3defiClientFactory); err != nil {
-		return fmt.Errorf("failed to register client factory %s: %w", "aiw3defi-bank-send", err)
+		return errors.NewClientFactoryError(errors.ErrCodeClientFactoryNotFound,
+			"failed to register aiw3defi-bank-send").
+			WithContext("factory_name", "aiw3defi-bank-send").
+			WithDetails(err.Error())
 	}
 
+	log.Info("Successfully registered all client factories")
 	return nil
 }
 
@@ -238,15 +285,31 @@ func listAvailableFactories() {
 }
 
 func buildConfig() (loadtest.Config, error) {
+	log := logger.WithComponent("config_validation")
 	var config loadtest.Config
 
 	// Validate endpoints
 	if *endpoints == "" {
-		return config, fmt.Errorf("endpoints are required")
+		return config, errors.NewValidationError(errors.ErrCodeMissingConfig,
+			"endpoints are required").
+			WithDetails("Use --endpoints flag to specify RPC endpoints")
 	}
+	
 	endpointList := strings.Split(*endpoints, ",")
 	for i, endpoint := range endpointList {
-		endpointList[i] = strings.TrimSpace(endpoint)
+		endpoint = strings.TrimSpace(endpoint)
+		endpointList[i] = endpoint
+		
+		// Validate endpoint format
+		if !strings.HasPrefix(endpoint, "ws://") && 
+		   !strings.HasPrefix(endpoint, "wss://") && 
+		   !strings.HasPrefix(endpoint, "http://") && 
+		   !strings.HasPrefix(endpoint, "https://") {
+			return config, errors.NewValidationError(errors.ErrCodeInvalidEndpoint,
+				"invalid endpoint format").
+				WithContext("endpoint", endpoint).
+				WithDetails("Endpoints must start with ws://, wss://, http://, or https://")
+		}
 	}
 
 	// Validate broadcast method
@@ -256,7 +319,11 @@ func buildConfig() (loadtest.Config, error) {
 		"commit": true,
 	}
 	if !validBroadcastMethods[*broadcastMethod] {
-		return config, fmt.Errorf("invalid broadcast method: %s (valid: sync, async, commit)", *broadcastMethod)
+		return config, errors.NewValidationError(errors.ErrCodeInvalidConfig,
+			"invalid broadcast method").
+			WithContext("broadcast_method", *broadcastMethod).
+			WithContext("valid_methods", []string{"sync", "async", "commit"}).
+			WithDetails("Valid broadcast methods are: sync, async, commit")
 	}
 
 	// Validate endpoint select method
@@ -266,7 +333,33 @@ func buildConfig() (loadtest.Config, error) {
 		"any":        true,
 	}
 	if !validEndpointSelectMethods[*endpointSelectMethod] {
-		return config, fmt.Errorf("invalid endpoint select method: %s (valid: supplied, discovered, any)", *endpointSelectMethod)
+		return config, errors.NewValidationError(errors.ErrCodeInvalidConfig,
+			"invalid endpoint select method").
+			WithContext("endpoint_select_method", *endpointSelectMethod).
+			WithContext("valid_methods", []string{"supplied", "discovered", "any"}).
+			WithDetails("Valid endpoint select methods are: supplied, discovered, any")
+	}
+
+	// Validate duration
+	if *duration <= 0 {
+		return config, errors.NewValidationError(errors.ErrCodeInvalidDuration,
+			"duration must be positive").
+			WithContext("duration", duration.String())
+	}
+
+	// Validate rate
+	if *transactionsPerSecond <= 0 {
+		return config, errors.NewValidationError(errors.ErrCodeInvalidRate,
+			"transaction rate must be positive").
+			WithContext("rate", *transactionsPerSecond)
+	}
+
+	// Validate transaction size
+	if *transactionSize < 40 {
+		return config, errors.NewValidationError(errors.ErrCodeInvalidSize,
+			"transaction size must be at least 40 bytes").
+			WithContext("size", *transactionSize).
+			WithDetails("Minimum transaction size is 40 bytes")
 	}
 
 	// Create temporary stats file if not provided
@@ -274,7 +367,9 @@ func buildConfig() (loadtest.Config, error) {
 	if statsFile == "" {
 		tmpFile, err := os.CreateTemp("", "cosmosloadtester-*.csv")
 		if err != nil {
-			return config, fmt.Errorf("failed to create temporary stats file: %w", err)
+			return config, errors.NewFileSystemError(errors.ErrCodeFileWriteFailed,
+				"failed to create temporary stats file").
+				WithDetails(err.Error())
 		}
 		statsFile = tmpFile.Name()
 		tmpFile.Close()
@@ -299,11 +394,27 @@ func buildConfig() (loadtest.Config, error) {
 		NoTrapInterrupts:     false,
 	}
 
-	return config, config.Validate()
+	// Validate the final config
+	if err := config.Validate(); err != nil {
+		return config, errors.WrapError(err, errors.ErrorTypeValidation,
+			errors.ErrCodeInvalidConfig, "configuration validation failed")
+	}
+
+	log.WithFields(logger.Fields{
+		"client_factory": config.ClientFactory,
+		"endpoints":      len(config.Endpoints),
+		"duration":       config.Time,
+		"rate":          config.Rate,
+		"connections":   config.Connections,
+	}).Info("Configuration validated successfully")
+
+	return config, nil
 }
 
 func runLoadTest(config loadtest.Config) error {
-	// Setup signal handling
+	log := logger.WithComponent("load_test_execution")
+	
+	// Setup signal handling with context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -345,26 +456,50 @@ func runLoadTest(config loadtest.Config) error {
 		)
 	}
 
-	// Start load test
-	go func() {
+	log.Info("Starting load test execution")
+
+	// Start load test in a goroutine with recovery
+	var loadTestErr error
+	recovery.SafeGoWithContext(ctx, func(ctx context.Context) {
+		defer func() {
+			if err := recovery.Recover(); err != nil {
+				log.WithError(err).Error("Panic recovered during load test execution")
+				loadTestErr = err
+				cancel()
+			}
+		}()
+		
 		if err := executeLoadTest(ctx, config, reporter); err != nil {
-			logrus.Errorf("Load test execution failed: %v", err)
+			log.WithError(err).Error("Load test execution failed")
+			loadTestErr = err
 			cancel()
 		}
-	}()
+	})
 
 	// Wait for completion or interruption
 	select {
 	case <-ctx.Done():
-		// Test completed
-	case <-sigChan:
+		if loadTestErr != nil {
+			return errors.WrapError(loadTestErr, errors.ErrorTypeLoadTest,
+				errors.ErrCodeLoadTestFailed, "load test execution failed")
+		}
+		log.Info("Load test completed successfully")
+	case sig := <-sigChan:
+		log.WithFields(logger.Fields{
+			"signal": sig.String(),
+		}).Warn("Received interrupt signal, stopping load test")
 		color.Yellow("\nReceived interrupt signal, stopping load test...")
 		cancel()
 		time.Sleep(2 * time.Second) // Give time for cleanup
 	}
 
-	// Display final results
-	return displayResults(reporter.stats)
+	// Display final results with error handling
+	if err := displayResults(reporter.stats); err != nil {
+		return errors.WrapError(err, errors.ErrorTypeInternal,
+			errors.ErrCodeUnexpectedError, "failed to display results")
+	}
+
+	return nil
 }
 
 func displayConfiguration(config loadtest.Config) {
@@ -394,29 +529,51 @@ func displayConfiguration(config loadtest.Config) {
 }
 
 func executeLoadTest(ctx context.Context, config loadtest.Config, reporter *ProgressReporter) error {
-	// Start periodic reporting
+	log := logger.WithComponent("load_test_executor")
+	
+	// Start periodic reporting with recovery
 	if *outputFormat == "live" && !*quiet {
-		go reporter.startPeriodicReporting()
+		recovery.SafeGoWithContext(ctx, func(ctx context.Context) {
+			reporter.startPeriodicReporting(ctx)
+		})
 	}
+
+	log.WithFields(logger.Fields{
+		"client_factory": config.ClientFactory,
+		"endpoints":      config.Endpoints,
+		"duration":       config.Time,
+		"rate":          config.Rate,
+		"connections":   config.Connections,
+	}).Info("Executing load test")
 
 	// Execute the load test using the existing tm-load-test framework
 	psL, err := loadtest.ExecuteStandaloneWithStats(config)
 	if err != nil {
-		return fmt.Errorf("load test execution failed: %w", err)
+		return errors.WrapError(err, errors.ErrorTypeLoadTest,
+			errors.ErrCodeLoadTestFailed, "tm-load-test execution failed").
+			WithContext("config", config)
 	}
 
-	// Process results
+	// Process results with error handling
 	reporter.mu.Lock()
 	defer reporter.mu.Unlock()
 
-	for _, ps := range psL {
+	log.Debug("Processing load test results")
+	
+	for i, ps := range psL {
+		log.WithFields(logger.Fields{
+			"result_index": i,
+			"total_txs":    ps.TotalTxs,
+			"total_time":   ps.TotalTime,
+		}).Debug("Processing result set")
+		
 		reporter.stats.TotalTxs += int64(ps.TotalTxs)
 		reporter.stats.TotalBytes += int64(ps.TotalBytes)
 		reporter.stats.TotalTime = ps.TotalTime
 		reporter.stats.AvgTxsPerSecond = ps.AvgTxPerSecond
 		reporter.stats.AvgBytesPerSecond = ps.AvgBytesPerSecond
 
-		// Process per-second stats
+		// Process per-second stats with error recovery
 		for _, perSec := range ps.PerSecond {
 			stats := PerSecondStats{
 				Second:         int64(perSec.Sec),
@@ -424,7 +581,7 @@ func executeLoadTest(ctx context.Context, config loadtest.Config, reporter *Prog
 				BytesPerSecond: float64(perSec.Bytes),
 			}
 
-			// Extract latency percentiles if available
+			// Extract latency percentiles if available with safety checks
 			if perSec.LatencyRankings != nil {
 				if perSec.LatencyRankings.P50thLatency != nil {
 					stats.LatencyP50 = perSec.LatencyRankings.P50thLatency.Latency
@@ -447,22 +604,30 @@ func executeLoadTest(ctx context.Context, config loadtest.Config, reporter *Prog
 		}
 	}
 
+	log.WithFields(logger.Fields{
+		"total_transactions": reporter.stats.TotalTxs,
+		"total_time":        reporter.stats.TotalTime,
+		"avg_tps":           reporter.stats.AvgTxsPerSecond,
+	}).Info("Load test execution completed successfully")
+
 	return nil
 }
 
-func (r *ProgressReporter) startPeriodicReporting() {
+func (r *ProgressReporter) startPeriodicReporting(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			r.updateProgress()
+			r.updateProgress(ctx)
+		case <-ctx.Done():
+			return
 		}
 	}
 }
 
-func (r *ProgressReporter) updateProgress() {
+func (r *ProgressReporter) updateProgress(ctx context.Context) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

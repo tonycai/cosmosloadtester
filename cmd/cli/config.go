@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"github.com/orijtech/cosmosloadtester/pkg/errors"
+	"github.com/orijtech/cosmosloadtester/pkg/logger"
+	"github.com/orijtech/cosmosloadtester/pkg/recovery"
 )
 
 // ConfigProfile represents a saved configuration profile
@@ -32,6 +35,7 @@ type ConfigProfile struct {
 	StatsOutputFile      string        `yaml:"stats_output_file,omitempty" json:"stats_output_file,omitempty"`
 	Tags                 []string      `yaml:"tags,omitempty" json:"tags,omitempty"`
 	CreatedAt            time.Time     `yaml:"created_at" json:"created_at"`
+	UpdatedAt            time.Time     `yaml:"updated_at" json:"updated_at"`
 }
 
 // ConfigManager handles configuration profiles
@@ -39,76 +43,194 @@ type ConfigManager struct {
 	configDir string
 }
 
-// NewConfigManager creates a new configuration  manager
+// NewConfigManager creates a new configuration manager
 func NewConfigManager() (*ConfigManager, error) {
+	log := logger.WithComponent("config_manager")
+	
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
+		return nil, errors.NewFileSystemError(errors.ErrCodePermissionDenied,
+			"failed to get user home directory").
+			WithDetails(err.Error())
 	}
 
 	configDir := filepath.Join(homeDir, ".cosmosloadtester")
+	
+	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create config directory: %w", err)
+		return nil, errors.NewFileSystemError(errors.ErrCodePermissionDenied,
+			"failed to create config directory").
+			WithContext("config_dir", configDir).
+			WithDetails(err.Error())
 	}
 
-	return &ConfigManager{configDir: configDir}, nil
+	log.WithFields(logger.Fields{
+		"config_dir": configDir,
+	}).Debug("Config manager initialized")
+
+	return &ConfigManager{
+		configDir: configDir,
+	}, nil
 }
 
 // SaveProfile saves a configuration profile
 func (cm *ConfigManager) SaveProfile(profile *ConfigProfile) error {
-	profile.CreatedAt = time.Now()
-	filename := filepath.Join(cm.configDir, profile.Name+".yaml")
+	log := logger.WithComponent("profile_manager").WithFields(logger.Fields{
+		"profile_name": profile.Name,
+	})
 	
-	data, err := yaml.Marshal(profile)
-	if err != nil {
-		return fmt.Errorf("failed to marshal profile: %w", err)
+	log.Debug("Saving configuration profile")
+	
+	// Validate profile
+	if profile.Name == "" {
+		return errors.NewValidationError(errors.ErrCodeInvalidConfig,
+			"profile name cannot be empty")
 	}
 
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return fmt.Errorf("failed to write profile file: %w", err)
+	if len(profile.Endpoints) == 0 {
+		return errors.NewValidationError(errors.ErrCodeInvalidConfig,
+			"profile must have at least one endpoint").
+			WithContext("profile_name", profile.Name)
 	}
+
+	// Set timestamps
+	if profile.CreatedAt.IsZero() {
+		profile.CreatedAt = time.Now()
+	}
+	profile.UpdatedAt = time.Now()
+
+	// Serialize to YAML
+	data, err := yaml.Marshal(profile)
+	if err != nil {
+		return errors.NewSerializationError(errors.ErrCodeYAMLMarshalFailed,
+			"failed to marshal profile to YAML").
+			WithContext("profile_name", profile.Name).
+			WithDetails(err.Error())
+	}
+
+	// Write to file
+	filename := filepath.Join(cm.configDir, profile.Name+".yaml")
+	if err := os.WriteFile(filename, data, 0644); err != nil {
+		return errors.NewFileSystemError(errors.ErrCodeFileWriteFailed,
+			"failed to write profile file").
+			WithContext("profile_name", profile.Name).
+			WithContext("filename", filename).
+			WithDetails(err.Error())
+	}
+
+	log.WithFields(logger.Fields{
+		"filename": filename,
+		"size":     len(data),
+	}).Info("Profile saved successfully")
 
 	return nil
 }
 
 // LoadProfile loads a configuration profile
 func (cm *ConfigManager) LoadProfile(name string) (*ConfigProfile, error) {
+	log := logger.WithComponent("profile_manager").WithFields(logger.Fields{
+		"profile_name": name,
+	})
+	
+	log.Debug("Loading configuration profile")
+	
+	// Validate profile name
+	if name == "" {
+		return nil, errors.NewValidationError(errors.ErrCodeInvalidConfig,
+			"profile name cannot be empty")
+	}
+	
 	filename := filepath.Join(cm.configDir, name+".yaml")
 	
+	// Check if file exists
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return nil, errors.NewProfileError(errors.ErrCodeProfileNotFound,
+			"profile not found").
+			WithContext("profile_name", name).
+			WithContext("filename", filename)
+	}
+	
+	// Read file
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read profile file: %w", err)
+		return nil, errors.NewFileSystemError(errors.ErrCodeFileReadFailed,
+			"failed to read profile file").
+			WithContext("profile_name", name).
+			WithContext("filename", filename).
+			WithDetails(err.Error())
 	}
 
+	// Parse YAML
 	var profile ConfigProfile
 	if err := yaml.Unmarshal(data, &profile); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal profile: %w", err)
+		return nil, errors.NewSerializationError(errors.ErrCodeYAMLUnmarshalFailed,
+			"failed to parse profile YAML").
+			WithContext("profile_name", name).
+			WithContext("filename", filename).
+			WithDetails(err.Error())
 	}
+
+	log.WithFields(logger.Fields{
+		"filename": filename,
+		"size":     len(data),
+	}).Info("Profile loaded successfully")
 
 	return &profile, nil
 }
 
 // ListProfiles lists all available configuration profiles
 func (cm *ConfigManager) ListProfiles() ([]*ConfigProfile, error) {
+	log := logger.WithComponent("profile_manager")
+	
+	log.Debug("Listing configuration profiles")
+	
 	files, err := filepath.Glob(filepath.Join(cm.configDir, "*.yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list profile files: %w", err)
+		return nil, errors.NewFileSystemError(errors.ErrCodeFileReadFailed,
+			"failed to list profile files").
+			WithContext("config_dir", cm.configDir).
+			WithDetails(err.Error())
 	}
 
 	var profiles []*ConfigProfile
+	errorCollector := recovery.NewErrorCollector(log)
+	
 	for _, file := range files {
-		data, err := os.ReadFile(file)
+		// Use recovery for individual file processing
+		err := recovery.SafeExecute(func() error {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				return errors.NewFileSystemError(errors.ErrCodeFileReadFailed,
+					"failed to read profile file").
+					WithContext("filename", file).
+					WithDetails(err.Error())
+			}
+
+			var profile ConfigProfile
+			if err := yaml.Unmarshal(data, &profile); err != nil {
+				return errors.NewSerializationError(errors.ErrCodeYAMLUnmarshalFailed,
+					"failed to parse profile YAML").
+					WithContext("filename", file).
+					WithDetails(err.Error())
+			}
+
+			profiles = append(profiles, &profile)
+			return nil
+		})
+		
 		if err != nil {
-			continue // Skip files that can't be read
+			log.WithError(err).WithFields(logger.Fields{
+				"filename": file,
+			}).Warn("Skipping invalid profile file")
+			errorCollector.Add(err)
 		}
-
-		var profile ConfigProfile
-		if err := yaml.Unmarshal(data, &profile); err != nil {
-			continue // Skip files that can't be parsed
-		}
-
-		profiles = append(profiles, &profile)
 	}
+
+	log.WithFields(logger.Fields{
+		"total_profiles": len(profiles),
+		"total_files":    len(files),
+		"errors":         errorCollector.HasErrors(),
+	}).Info("Profile listing completed")
 
 	return profiles, nil
 }

@@ -946,6 +946,88 @@ This project is licensed under the terms specified in [LICENSE](LICENSE).
 - [DOCKER_README.md](DOCKER_README.md) - Docker deployment documentation
 - [examples/cli-examples.sh](examples/cli-examples.sh) - CLI usage examples and demonstrations
 
+## 🌐 AIW3 Devnet Integration
+
+### Quick Start with AIW3 Devnet
+
+The cosmosloadtester includes built-in support for AIW3 devnet with specialized client factories for DeFi operations:
+
+```bash
+# Quick AIW3 devnet test
+./bin/cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=100 \
+  --connections=2
+
+# Use the automated setup script
+./examples/aiw3-devnet-example.sh
+```
+
+### AIW3 Network Information
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **RPC Endpoint** | `https://devnet-rpc.aiw3.io` | Main RPC endpoint for transactions |
+| **Faucet Server** | `https://devnet-faucet.aiw3.io` | Get test tokens for development |
+
+### Getting Test Tokens
+
+To get test tokens for AIW3 devnet, use the faucet service:
+
+```bash
+# Request test tokens (replace with your test address)
+curl -X POST https://devnet-faucet.aiw3.io/request \
+  -H 'Content-Type: application/json' \
+  -d '{"address": "aiw3...", "amount": "1000000"}'
+```
+
+### AIW3-Specific Client Factories
+
+- **`aiw3defi-bank-send`**: Specialized for AIW3 DeFi bank send transactions
+- **`test-cosmos-client-factory`**: Generic Cosmos transactions (also works with AIW3)
+
+### AIW3 Load Testing Examples
+
+```bash
+# High-throughput DeFi testing
+./bin/cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=60s \
+  --rate=1000 \
+  --connections=5 \
+  --broadcast-method=async
+
+# Latency measurement
+./bin/cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=10 \
+  --connections=1 \
+  --broadcast-method=commit
+
+# Create and use AIW3 profile
+./bin/cosmosloadtester-cli --generate-template=aiw3defi-test
+./bin/cosmosloadtester-cli --profile=aiw3defi-test
+```
+
+### Docker with AIW3 Devnet
+
+```bash
+# Run AIW3 devnet test in Docker
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=100
+
+# Use the automated setup script in Docker
+docker-compose exec cosmosloadtester-cli /app/examples/aiw3-devnet-example.sh
+```
+
 ---
 
 *Built with ❤️ for the Cosmos ecosystem*

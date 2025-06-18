@@ -1,0 +1,1 @@
+ws://host.docker.internal:26657/websocket

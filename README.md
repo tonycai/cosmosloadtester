@@ -176,6 +176,283 @@ graph TD
 4. **Access the application:**
    Open your browser to http://localhost:8080
 
+## 🖥️ Terminal CLI Usage
+
+### Prerequisites for CLI
+
+- Go 1.22 or later
+- Docker and Docker Compose (for containerized deployment)
+
+### Building the CLI
+
+```bash
+# Build the CLI binary
+make cli
+
+# Or build with Docker
+docker-compose build cosmosloadtester-cli
+```
+
+### CLI Quick Start
+
+```bash
+# Show help and available options
+./bin/cosmosloadtester-cli --help
+
+# List available client factories
+./bin/cosmosloadtester-cli --list-factories
+
+# Run a basic load test
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --duration=30s \
+  --rate=100 \
+  --client-factory="test-cosmos-client-factory"
+
+# Interactive mode for guided setup
+./bin/cosmosloadtester-cli --interactive
+```
+
+### CLI Advanced Usage Examples
+
+#### Profile Management
+```bash
+# Generate a template profile
+./bin/cosmosloadtester-cli --generate-template local-testnet
+
+# Save current configuration as a profile
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket,http://localhost:26657" \
+  --duration=60s \
+  --rate=500 \
+  --connections=2 \
+  --save-profile="my-testnet"
+
+# List saved profiles
+./bin/cosmosloadtester-cli --list-profiles
+
+# Use a saved profile
+./bin/cosmosloadtester-cli --profile="my-testnet"
+
+# Show profile details
+./bin/cosmosloadtester-cli --show-profile="my-testnet"
+```
+
+#### Benchmark Suites
+```bash
+# Quick benchmark (10s, 100 TPS)
+./bin/cosmosloadtester-cli \
+  --benchmark=quick \
+  --endpoints="ws://localhost:26657/websocket"
+
+# Standard benchmark (30s, sync + async tests)
+./bin/cosmosloadtester-cli \
+  --benchmark=standard \
+  --endpoints="ws://localhost:26657/websocket"
+
+# Stress test (60s, 5000 TPS, 10 connections)
+./bin/cosmosloadtester-cli \
+  --benchmark=stress \
+  --endpoints="ws://localhost:26657/websocket"
+```
+
+#### Output Formats
+```bash
+# Live output with progress bar (default)
+./bin/cosmosloadtester-cli --endpoints="..." --output-format=live
+
+# JSON output for automation
+./bin/cosmosloadtester-cli --endpoints="..." --output-format=json
+
+# CSV output for analysis
+./bin/cosmosloadtester-cli --endpoints="..." --output-format=csv
+
+# Summary output for CI/CD
+./bin/cosmosloadtester-cli --endpoints="..." --output-format=summary
+```
+
+#### Advanced Configuration
+```bash
+# Multi-protocol testing
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://node1:26657/websocket,http://node2:26657,wss://node3:26657/websocket" \
+  --connections=3 \
+  --duration=2m \
+  --rate=1000 \
+  --broadcast-method=async \
+  --client-factory="aiw3defi-bank-send"
+
+# Custom transaction parameters
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --size=500 \
+  --count=10000 \
+  --send-period=2s \
+  --stats-output="./results/loadtest-$(date +%Y%m%d-%H%M%S).csv"
+```
+
+### 🐳 Docker Deployment
+
+#### Quick Docker Start
+```bash
+# Build and start the container
+docker-compose up -d cosmosloadtester-cli
+
+# Run CLI commands in container
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli --help
+
+# Example load test in container
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --endpoints="ws://host.docker.internal:26657/websocket" \
+  --duration=30s \
+  --rate=100
+
+# View container logs
+docker-compose logs cosmosloadtester-cli
+
+# Stop container
+docker-compose down
+```
+
+#### Persistent Data and Configuration
+```bash
+# Profiles are saved to ./config/ on host
+# Results are saved to ./results/ on host
+# Examples are available in ./examples/ (read-only)
+
+# List profiles (persisted on host)
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli --list-profiles
+
+# Generate and save a template
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --generate-template=high-throughput
+```
+
+### 📊 Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph "Deployment Options"
+        A[Local Binary] --> B[Direct Execution]
+        C[Docker Container] --> D[Containerized Execution]
+        E[Docker Compose] --> F[Multi-Service Stack]
+    end
+    
+    subgraph "CLI Application"
+        G[cosmosloadtester-cli] --> H[Profile Manager]
+        G --> I[Load Test Engine]
+        G --> J[Metrics Collector]
+        G --> K[Output Formatter]
+    end
+    
+    subgraph "Data Persistence"
+        L[Host Config Dir] --> M[./config/]
+        N[Host Results Dir] --> O[./results/]
+        P[Container Config] --> Q[/home/cosmosload/.cosmosloadtester]
+        R[Container Results] --> S[/app/results]
+    end
+    
+    subgraph "Target Networks"
+        T[Local Testnet] --> U[localhost:26657]
+        V[Remote Testnet] --> W[testnet.cosmos.network:26657]
+        X[Mainnet] --> Y[rpc.cosmos.network:26657]
+        Z[Custom Network] --> AA[custom.rpc:26657]
+    end
+    
+    subgraph "Monitoring & Integration"
+        BB[Prometheus] --> CC[Metrics Scraping]
+        DD[Grafana] --> EE[Visualization]
+        FF[CI/CD Pipeline] --> GG[Automated Testing]
+        HH[Alerting] --> II[Performance Monitoring]
+    end
+    
+    A --> G
+    C --> G
+    E --> G
+    
+    G --> T
+    G --> V
+    G --> X
+    G --> Z
+    
+    L --> P
+    N --> R
+    
+    G --> BB
+    CC --> DD
+    G --> FF
+    G --> HH
+    
+    style A fill:#e1f5fe
+    style C fill:#e8f5e8
+    style E fill:#fff3e0
+    style G fill:#f3e5f5
+    style BB fill:#ffebee
+```
+
+### 🔧 Integration Examples
+
+#### CI/CD Pipeline Integration
+```yaml
+# GitHub Actions example
+name: Load Test
+on: [push, pull_request]
+jobs:
+  load-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Run Load Test
+      run: |
+        docker-compose up -d cosmosloadtester-cli
+        docker-compose exec -T cosmosloadtester-cli cosmosloadtester-cli \
+          --endpoints="ws://testnet:26657/websocket" \
+          --duration=30s \
+          --rate=100 \
+          --output-format=json > results.json
+        # Parse results and set thresholds
+```
+
+#### Kubernetes Deployment
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cosmos-load-test
+spec:
+  template:
+    spec:
+      containers:
+      - name: cosmosloadtester-cli
+        image: cosmosloadtester-cli:latest
+        command: ["cosmosloadtester-cli"]
+        args:
+        - "--endpoints=ws://cosmos-node:26657/websocket"
+        - "--duration=60s"
+        - "--rate=500"
+        - "--output-format=json"
+        volumeMounts:
+        - name: results
+          mountPath: /app/results
+      volumes:
+      - name: results
+        persistentVolumeClaim:
+          claimName: loadtest-results
+      restartPolicy: Never
+```
+
+#### Monitoring Integration
+```bash
+# Export metrics to Prometheus format
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --duration=60s \
+  --output-format=json | \
+  jq '.avg_txs_per_second' | \
+  curl -X POST http://pushgateway:9091/metrics/job/loadtest \
+  --data-binary @-
+```
+
 ## 🔧 Core Feature Analysis
 
 ### 🌟 **Multi-Protocol Support**
@@ -440,7 +717,12 @@ flowchart TD
 
 ```
 cosmosloadtester/
-├── cmd/server/          # Main server application
+├── cmd/
+│   ├── server/          # Main server application
+│   └── cli/             # Terminal CLI application
+│       ├── main.go      # CLI main entry point
+│       ├── cli.go       # CLI interface and commands
+│       └── config.go    # Profile and configuration management
 ├── ui/                  # React frontend
 ├── proto/               # Protocol buffer definitions
 ├── server/              # Server implementation
@@ -450,6 +732,19 @@ cosmosloadtester/
 ├── clients/             # Client factory implementations
 │   ├── myabciapp/       # Sample client factory
 │   └── aiw3defi/        # AIW3 DeFi client factory
+├── examples/            # CLI usage examples
+│   └── cli-examples.sh  # Demonstration scripts
+├── config/              # Configuration profiles (mounted volume)
+├── results/             # Test results output (mounted volume)
+├── monitoring/          # Monitoring configuration
+│   ├── prometheus.yml   # Prometheus configuration
+│   └── grafana/         # Grafana dashboards
+├── Dockerfile           # Multi-stage Docker build
+├── docker-compose.yml   # Container orchestration
+├── docker-entrypoint.sh # Container entry script
+├── .dockerignore        # Docker build exclusions
+├── CLI_README.md        # CLI-specific documentation
+├── DOCKER_README.md     # Docker deployment guide
 └── build/               # Build artifacts
 ```
 
@@ -458,6 +753,10 @@ cosmosloadtester/
 - `make pb` - Generate protocol buffer code
 - `make ui` - Build the React frontend
 - `make server` - Build the Go server binary
+- `make cli` - Build the CLI binary
+- `make docker-build` - Build Docker image
+- `make docker-run` - Run Docker container
+- `make docker-init` - Initialize Docker directories
 
 ### Protocol Buffer Generation
 
@@ -505,24 +804,56 @@ cd ui && npm test
 
 ### Common Issues
 
+#### Web UI Issues
 1. **Port already in use**: Change the port with `--port=8081`
 2. **UI not loading**: Ensure `make ui` was run successfully
 3. **gRPC connection errors**: Check that endpoints are accessible
-4. **Client factory not found**: Verify registration in `registerClientFactories`
-5. **Protocol detection issues**: Ensure endpoints have proper URL schemes
+
+#### CLI Issues
+4. **CLI binary not found**: Run `make cli` to build the binary
+5. **Permission denied**: Make the binary executable with `chmod +x bin/cosmosloadtester-cli`
+6. **Profile not found**: Check profile exists with `--list-profiles`
+7. **Endpoint unreachable**: Use `--check-endpoints` to verify connectivity
+8. **Invalid configuration**: Use `--validate-config` to check settings
+
+#### Docker Issues
+9. **Container won't start**: Check Docker daemon is running
+10. **Network conflicts**: Use `docker network prune` to clean up networks
+11. **Volume mount issues**: Ensure `./config` and `./results` directories exist
+12. **Build failures**: Check Go version compatibility (requires Go 1.22+)
+
+#### General Issues
+13. **Client factory not found**: Verify registration in `registerClientFactories`
+14. **Protocol detection issues**: Ensure endpoints have proper URL schemes
+15. **Memory issues**: Reduce connection count or transaction rate for large tests
 
 ### Debug Logging
 
-Set log level for more detailed output:
-
+#### Server Debug Logging
 ```bash
 ./bin/server --port=8080 --log-level=debug
 ```
 
+#### CLI Debug Logging
+```bash
+./bin/cosmosloadtester-cli --log-level=debug --endpoints="..." --duration=30s
+```
+
+#### Docker Debug Logging
+```bash
+# View container logs
+docker-compose logs -f cosmosloadtester-cli
+
+# Run with debug output
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --log-level=debug \
+  --endpoints="ws://host.docker.internal:26657/websocket" \
+  --duration=30s
+```
+
 ### Network Connectivity
 
-Test endpoint connectivity:
-
+#### Test Endpoint Connectivity
 ```bash
 # WebSocket endpoint
 curl -H "Upgrade: websocket" -H "Connection: Upgrade" ws://localhost:26657/websocket
@@ -530,6 +861,65 @@ curl -H "Upgrade: websocket" -H "Connection: Upgrade" ws://localhost:26657/webso
 # HTTP endpoint  
 curl -X POST http://localhost:26657 -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"status","params":{},"id":1}'
+
+# Using CLI endpoint checker
+./bin/cosmosloadtester-cli --check-endpoints --endpoints="ws://localhost:26657/websocket"
+```
+
+#### Docker Network Issues
+```bash
+# Check Docker networks
+docker network ls
+
+# Test connectivity from container
+docker-compose exec cosmosloadtester-cli ping host.docker.internal
+
+# Check if endpoints are accessible from container
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --check-endpoints \
+  --endpoints="ws://host.docker.internal:26657/websocket"
+```
+
+### Performance Tuning
+
+#### Optimize for High Throughput
+```bash
+# Increase connections and use async broadcasting
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --connections=10 \
+  --rate=5000 \
+  --broadcast-method=async \
+  --send-period=500ms
+```
+
+#### Optimize for Low Latency
+```bash
+# Use fewer connections and sync broadcasting
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --connections=1 \
+  --rate=100 \
+  --broadcast-method=sync \
+  --size=40
+```
+
+### Configuration Validation
+
+```bash
+# Validate configuration before running
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --duration=60s \
+  --rate=1000 \
+  --validate-config
+
+# Dry run to see what would be executed
+./bin/cosmosloadtester-cli \
+  --endpoints="ws://localhost:26657/websocket" \
+  --duration=60s \
+  --rate=1000 \
+  --dry-run
 ```
 
 ## 📄 License
@@ -549,6 +939,12 @@ This project is licensed under the terms specified in [LICENSE](LICENSE).
 - [tm-load-test](https://github.com/informalsystems/tm-load-test) - Core load testing framework
 - [Cosmos SDK](https://github.com/cosmos/cosmos-sdk) - Blockchain application framework
 - [Tendermint](https://github.com/tendermint/tendermint) - Byzantine fault-tolerant consensus engine
+
+## 📖 Additional Documentation
+
+- [CLI_README.md](CLI_README.md) - Comprehensive CLI usage guide
+- [DOCKER_README.md](DOCKER_README.md) - Docker deployment documentation
+- [examples/cli-examples.sh](examples/cli-examples.sh) - CLI usage examples and demonstrations
 
 ---
 

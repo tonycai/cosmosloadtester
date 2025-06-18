@@ -1,0 +1,81 @@
+# Git
+.git
+.gitignore
+.gitmodules
+
+# Documentation
+*.md
+!CLI_README.md
+docs/
+
+# Build artifacts
+bin/
+build/
+dist/
+
+# Node.js (UI components)
+ui/node_modules/
+ui/build/
+ui/.env*
+ui/npm-debug.log*
+ui/yarn-debug.log*
+ui/yarn-error.log*
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Logs
+*.log
+logs/
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files and coverage
+*.test
+*.out
+coverage.txt
+.coverage/
+
+# Local configuration and secrets
+.env*
+!.env.example
+secrets/
+config/local*
+
+# Results and output directories
+results/
+output/
+testnet-data/
+
+# Cache directories
+.cache/
+node_modules/
+vendor/
+
+# Protocol buffer generated files (will be regenerated)
+proto/gen/
+
+# Monitoring configuration (will be created separately)
+monitoring/ 

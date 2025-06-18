@@ -2,13 +2,151 @@
 
 A comprehensive load-testing tool for Cosmos blockchain applications built on top of [informalsystems/tm-load-test](https://github.com/informalsystems/tm-load-test). It provides detailed performance metrics, latency percentile breakdowns, and real-time visualization of load test results.
 
-## 🏗️ Architecture
+## 🎯 Core Features
 
-The tool consists of three main components:
+### 🏗️ System Architecture
 
-1. **Go Server** ([cmd/server/main.go](cmd/server/main.go)) - Exposes the load test service over HTTP using gRPC-web
-2. **React UI** ([ui/](ui/)) - Built-in web interface for scheduling load tests and visualizing results  
-3. **gRPC API** ([proto/](proto/)) - Can be interacted with directly using gRPC, gRPC-Gateway, or gRPC-web
+```mermaid
+graph TB
+    subgraph "Frontend Layer"
+        A[React UI] --> B[Material-UI Components]
+        A --> C[D3.js Charts]
+        A --> D[gRPC-Web Client]
+    end
+    
+    subgraph "API Layer"
+        E[gRPC Gateway] --> F[HTTP REST API]
+        E --> G[gRPC-Web Handler]
+        E --> H[Static File Server]
+    end
+    
+    subgraph "Server Layer"
+        I[Go Server] --> J[Hybrid Server]
+        J --> K[Load Test Engine]
+        K --> L[Protocol Factory]
+    end
+    
+    subgraph "Protocol Support"
+        L --> M[WebSocket Transactor]
+        L --> N[HTTP/HTTPS Transactor]
+        M --> O[Tendermint WS RPC]
+        N --> P[Tendermint HTTP RPC]
+    end
+    
+    subgraph "Client Factories"
+        Q[MyABCIApp Client] --> R[Empty Transactions]
+        S[AIW3DeFi Client] --> T[Bank Send Transactions]
+        U[Custom Client] --> V[Your Transactions]
+    end
+    
+    A --> E
+    I --> E
+    K --> Q
+    K --> S
+    K --> U
+    
+    style A fill:#61dafb
+    style I fill:#00add8
+    style K fill:#ff6b6b
+    style L fill:#4ecdc4
+```
+
+### 🔄 Load Test Workflow
+
+```mermaid
+sequenceDiagram
+    participant UI as React UI
+    participant API as gRPC Gateway
+    participant Server as Go Server
+    participant Factory as Protocol Factory
+    participant WS as WebSocket Transactor
+    participant HTTP as HTTP Transactor
+    participant Chain as Blockchain Network
+    
+    UI->>+API: Load Test Request
+    API->>+Server: gRPC RunLoadtest
+    Server->>+Factory: CreateTransactor(endpoint)
+    
+    alt WebSocket Endpoint
+        Factory->>+WS: NewTransactor(ws://endpoint)
+        WS->>Chain: WebSocket Connection
+    else HTTP Endpoint  
+        Factory->>+HTTP: NewHybridTransactor(http://endpoint)
+        HTTP->>Chain: HTTP RPC Connection
+    end
+    
+    Server->>WS: Start Load Test
+    Server->>HTTP: Start Load Test
+    
+    loop During Test Duration
+        WS->>Chain: Send Transactions (WebSocket)
+        HTTP->>Chain: Send Transactions (HTTP RPC)
+        Chain-->>WS: Transaction Responses
+        Chain-->>HTTP: Transaction Responses
+        WS->>Server: Stats Update
+        HTTP->>Server: Stats Update
+    end
+    
+    Server->>WS: Cancel & Collect Stats
+    Server->>HTTP: Cancel & Collect Stats
+    WS-->>-Server: Final Statistics
+    HTTP-->>-Server: Final Statistics
+    Server-->>-API: Load Test Response
+    API-->>-UI: Results & Metrics
+    
+    UI->>UI: Render Charts & Graphs
+```
+
+### 🧩 Component Architecture
+
+```mermaid
+graph TD
+    subgraph "Go Backend Components"
+        A[main.go] --> B[HybridServer]
+        B --> C[Server]
+        C --> D[TransactorFactory]
+        D --> E[WebSocketTransactor]
+        D --> F[HTTPTransactor]
+        F --> G[HTTPRPCClient]
+        
+        H[ClientFactory Interface] --> I[MyABCIApp Factory]
+        H --> J[AIW3DeFi Factory]
+        H --> K[Custom Factory]
+        
+        I --> L[Empty Tx Generator]
+        J --> M[Bank Send Generator]
+        K --> N[Custom Tx Generator]
+    end
+    
+    subgraph "React Frontend Components"
+        O[App.tsx] --> P[LoadTester]
+        P --> Q[Inputs Component]
+        P --> R[Outputs Component]
+        R --> S[Charts Component]
+        S --> T[D3.js Lines Chart]
+        
+        Q --> U[Form Fields]
+        U --> V[Client Factory Selector]
+        U --> W[Protocol Configuration]
+        U --> X[Performance Settings]
+    end
+    
+    subgraph "Protocol Buffer API"
+        Y[loadtest_service.proto] --> Z[RunLoadtestRequest]
+        Y --> AA[RunLoadtestResponse]
+        AA --> BB[PerSecond Metrics]
+        BB --> CC[Latency Rankings]
+        BB --> DD[Bytes Rankings]
+    end
+    
+    B --> Y
+    P --> Y
+    
+    style A fill:#00add8
+    style O fill:#61dafb
+    style Y fill:#4285f4
+    style D fill:#ff6b6b
+```
 
 ## 🚀 Quick Start
 
@@ -38,43 +176,81 @@ The tool consists of three main components:
 4. **Access the application:**
    Open your browser to http://localhost:8080
 
-## 🔧 Development
+## 🔧 Core Feature Analysis
 
-### Project Structure
+### 🌟 **Multi-Protocol Support**
+- **WebSocket**: Traditional Tendermint WebSocket RPC (ws://, wss://)
+- **HTTP/HTTPS**: Modern HTTP RPC support with JSON-RPC 2.0
+- **Automatic Detection**: Protocol auto-detection based on endpoint URL
+- **Hybrid Execution**: Concurrent testing across multiple protocols
 
+### 📊 **Advanced Metrics & Analytics**
+- **Real-time Statistics**: Live performance metrics during test execution
+- **Latency Percentiles**: P50, P75, P90, P95, P99 latency breakdown
+- **Throughput Analysis**: Transactions per second with time-series data
+- **Data Transfer Metrics**: Bytes sent/received tracking
+- **Interactive Visualizations**: D3.js powered charts and graphs
+
+### 🏭 **Extensible Client Factory System**
+```mermaid
+classDiagram
+    class ClientFactory {
+        <<interface>>
+        +ValidateConfig(Config) error
+        +NewClient(Config) Client
+    }
+    
+    class Client {
+        <<interface>>
+        +GenerateTx() []byte
+    }
+    
+    class MyABCIAppFactory {
+        +txConfig TxConfig
+        +ValidateConfig(Config) error
+        +NewClient(Config) Client
+    }
+    
+    class AIW3DefiFactory {
+        +txConfig TxConfig
+        +ValidateConfig(Config) error  
+        +NewClient(Config) Client
+    }
+    
+    class MyABCIAppClient {
+        +txConfig TxConfig
+        +GenerateTx() []byte
+    }
+    
+    class AIW3DefiClient {
+        +txConfig TxConfig
+        +chainID string
+        +senderKey PrivKey
+        +GenerateTx() []byte
+    }
+    
+    ClientFactory <|-- MyABCIAppFactory
+    ClientFactory <|-- AIW3DefiFactory
+    Client <|-- MyABCIAppClient
+    Client <|-- AIW3DefiClient
+    MyABCIAppFactory --> MyABCIAppClient
+    AIW3DefiFactory --> AIW3DefiClient
 ```
-cosmosloadtester/
-├── cmd/server/          # Main server application
-├── ui/                  # React frontend
-├── proto/               # Protocol buffer definitions
-├── server/              # Server implementation
-├── pkg/                 # Go packages
-├── clients/             # Client factory implementations
-│   ├── myabciapp/       # Sample client factory
-│   └── aiw3defi/        # AIW3 DeFi client factory
-└── build/               # Build artifacts
-```
 
-### Available Make Commands
+### 🎨 **Modern Web Interface**
+- **Material-UI Design**: Professional, responsive interface
+- **Real-time Updates**: Live progress tracking and status updates
+- **Dark/Light Themes**: Customizable appearance
+- **Mobile Responsive**: Works on desktop, tablet, and mobile devices
+- **Form Validation**: Input validation with helpful error messages
 
-- `make pb` - Generate protocol buffer code
-- `make ui` - Build the React frontend
-- `make server` - Build the Go server binary
-
-### Protocol Buffer Generation
-
-The project uses [buf](https://docs.buf.build/) for protocol buffer code generation:
-
-```bash
-cd proto
-buf mod update
-buf generate --template buf.gen.yaml
-buf generate --template buf.gen.ts.grpcweb.yaml --include-imports
-```
+### ⚡ **High-Performance Architecture**
+- **Concurrent Execution**: Multi-threaded transaction generation
+- **Connection Pooling**: Efficient connection management
+- **Memory Optimized**: Minimal memory footprint for large-scale tests
+- **Graceful Shutdown**: Clean resource cleanup and error handling
 
 ## 🎯 Creating Custom Client Factories
-
-To load test your specific message types, you need to create a custom client factory:
 
 ### Step 1: Create Your Client Factory
 
@@ -148,17 +324,43 @@ func registerClientFactories() error {
 
 ### Available Parameters
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| Client Factory | Name of the registered client factory | - |
-| Connection Count | Number of connections per endpoint | 1 |
-| Duration | Load test duration | 60s |
-| Send Period | Batch send interval | 1s |
-| Transactions/sec | Rate per connection per endpoint | 1000 |
-| Transaction Size | Size in bytes (min 40) | 250 |
-| Transaction Count | Max transactions (-1 = unlimited) | -1 |
-| Broadcast Method | sync, async, or commit | sync |
-| Endpoints | Tendermint WebSocket RPC URLs | - |
+| Parameter | Description | Default | Protocol Support |
+|-----------|-------------|---------|------------------|
+| Client Factory | Name of the registered client factory | - | All |
+| Connection Count | Number of connections per endpoint | 1 | All |
+| Duration | Load test duration | 60s | All |
+| Send Period | Batch send interval | 1s | All |
+| Transactions/sec | Rate per connection per endpoint | 1000 | All |
+| Transaction Size | Size in bytes (min 40) | 250 | All |
+| Transaction Count | Max transactions (-1 = unlimited) | -1 | All |
+| Broadcast Method | sync, async, or commit | sync | All |
+| Endpoints | WebSocket/HTTP RPC URLs | - | Auto-detected |
+
+### Protocol-Specific Features
+
+```mermaid
+graph LR
+    subgraph "WebSocket Features"
+        A[Real-time Connection] --> B[Persistent Socket]
+        B --> C[Event Streaming]
+        C --> D[Lower Latency]
+    end
+    
+    subgraph "HTTP Features"  
+        E[Stateless Requests] --> F[Load Balancer Friendly]
+        F --> G[Standard HTTP Status]
+        G --> H[Easier Debugging]
+    end
+    
+    subgraph "Hybrid Benefits"
+        I[Protocol Flexibility] --> J[Infrastructure Compatibility]
+        J --> K[Fallback Options]
+        K --> L[Comprehensive Testing]
+    end
+    
+    A --> I
+    E --> I
+```
 
 ### Broadcast Methods
 
@@ -171,6 +373,18 @@ func registerClientFactories() error {
 ### gRPC
 
 Connect directly to the gRPC service using the protocol definitions in [proto/orijtech/cosmosloadtester/v1/loadtest_service.proto](proto/orijtech/cosmosloadtester/v1/loadtest_service.proto).
+
+```mermaid
+graph LR
+    A[gRPC Client] --> B[LoadtestService]
+    B --> C[RunLoadtest Method]
+    C --> D[RunLoadtestRequest]
+    C --> E[RunLoadtestResponse]
+    E --> F[Metrics & Statistics]
+    F --> G[Per-Second Data]
+    F --> H[Latency Rankings]
+    F --> I[Throughput Data]
+```
 
 ### HTTP REST API
 
@@ -187,7 +401,7 @@ curl -X POST http://localhost:8080/v1/loadtest:run \
     "transactions_per_second": 1000,
     "transaction_size_bytes": 250,
     "broadcast_tx_method": 1,
-    "endpoints": ["ws://localhost:26657/websocket"]
+    "endpoints": ["ws://localhost:26657/websocket", "http://localhost:26657"]
   }'
 ```
 
@@ -201,7 +415,60 @@ The tool provides comprehensive metrics including:
 - **Success/Error Rates**: Transaction success rates
 - **Real-time Graphs**: Live visualization using D3.js
 
+### Data Flow Architecture
+
+```mermaid
+flowchart TD
+    A[Load Test Execution] --> B[Raw Metrics Collection]
+    B --> C[Statistical Processing]
+    C --> D[Percentile Calculations]
+    C --> E[Time-Series Aggregation]
+    D --> F[Ranking Data]
+    E --> G[Per-Second Buckets]
+    F --> H[Protocol Buffer Response]
+    G --> H
+    H --> I[gRPC-Web Transport]
+    I --> J[React UI State]
+    J --> K[D3.js Visualization]
+    K --> L[Interactive Charts]
+    K --> M[Real-time Updates]
+```
+
 ## 🛠️ Development Setup
+
+### Project Structure
+
+```
+cosmosloadtester/
+├── cmd/server/          # Main server application
+├── ui/                  # React frontend
+├── proto/               # Protocol buffer definitions
+├── server/              # Server implementation
+├── pkg/                 # Go packages
+│   ├── loadtest/        # Load test abstractions
+│   └── httprpc/         # HTTP RPC client
+├── clients/             # Client factory implementations
+│   ├── myabciapp/       # Sample client factory
+│   └── aiw3defi/        # AIW3 DeFi client factory
+└── build/               # Build artifacts
+```
+
+### Available Make Commands
+
+- `make pb` - Generate protocol buffer code
+- `make ui` - Build the React frontend
+- `make server` - Build the Go server binary
+
+### Protocol Buffer Generation
+
+The project uses [buf](https://docs.buf.build/) for protocol buffer code generation:
+
+```bash
+cd proto
+buf mod update
+buf generate --template buf.gen.yaml
+buf generate --template buf.gen.ts.grpcweb.yaml --include-imports
+```
 
 ### Frontend Development
 
@@ -242,6 +509,7 @@ cd ui && npm test
 2. **UI not loading**: Ensure `make ui` was run successfully
 3. **gRPC connection errors**: Check that endpoints are accessible
 4. **Client factory not found**: Verify registration in `registerClientFactories`
+5. **Protocol detection issues**: Ensure endpoints have proper URL schemes
 
 ### Debug Logging
 
@@ -249,6 +517,19 @@ Set log level for more detailed output:
 
 ```bash
 ./bin/server --port=8080 --log-level=debug
+```
+
+### Network Connectivity
+
+Test endpoint connectivity:
+
+```bash
+# WebSocket endpoint
+curl -H "Upgrade: websocket" -H "Connection: Upgrade" ws://localhost:26657/websocket
+
+# HTTP endpoint  
+curl -X POST http://localhost:26657 -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"status","params":{},"id":1}'
 ```
 
 ## 📄 License
@@ -268,3 +549,7 @@ This project is licensed under the terms specified in [LICENSE](LICENSE).
 - [tm-load-test](https://github.com/informalsystems/tm-load-test) - Core load testing framework
 - [Cosmos SDK](https://github.com/cosmos/cosmos-sdk) - Blockchain application framework
 - [Tendermint](https://github.com/tendermint/tendermint) - Byzantine fault-tolerant consensus engine
+
+---
+
+*Built with ❤️ for the Cosmos ecosystem*

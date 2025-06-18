@@ -15,6 +15,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 AIW3_RPC_ENDPOINT="https://devnet-rpc.aiw3.io"
+AIW3_API_ENDPOINT="https://devnet-api.aiw3.io"
 AIW3_FAUCET_ENDPOINT="https://devnet-faucet.aiw3.io"
 CLI_BINARY="./bin/cosmosloadtester-cli"
 
@@ -53,9 +54,10 @@ print_success() {
 }
 
 print_step "Step 1: Check AIW3 Devnet Connectivity"
-print_info "Testing connection to AIW3 devnet RPC endpoint..."
+print_info "Testing connection to AIW3 devnet endpoints..."
 
 # Test RPC endpoint connectivity
+print_info "Testing RPC endpoint..."
 if curl -s --connect-timeout 10 "$AIW3_RPC_ENDPOINT" > /dev/null; then
     print_success "AIW3 RPC endpoint is reachable"
 else
@@ -64,8 +66,17 @@ else
     exit 1
 fi
 
+# Test API endpoint connectivity
+print_info "Testing API endpoint..."
+if curl -s --connect-timeout 10 "$AIW3_API_ENDPOINT" > /dev/null; then
+    print_success "AIW3 API endpoint is reachable"
+else
+    print_warning "Cannot reach AIW3 API endpoint: $AIW3_API_ENDPOINT"
+    print_warning "API endpoint may not be required for load testing"
+fi
+
 # Test faucet endpoint connectivity
-print_info "Testing connection to AIW3 faucet endpoint..."
+print_info "Testing faucet endpoint..."
 if curl -s --connect-timeout 10 "$AIW3_FAUCET_ENDPOINT" > /dev/null; then
     print_success "AIW3 faucet endpoint is reachable"
 else
@@ -97,6 +108,7 @@ transaction_count: -1
 broadcast_method: sync
 endpoints:
   - $AIW3_RPC_ENDPOINT
+  - $AIW3_API_ENDPOINT
 endpoint_select_method: supplied
 expect_peers: 0
 max_endpoints: 0
@@ -106,6 +118,7 @@ tags:
   - aiw3
   - devnet
   - bank-send
+  - multi-endpoint
 created_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 updated_at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EOF
@@ -125,15 +138,19 @@ print_step "Step 4: Display Profile Details"
 $CLI_BINARY --show-profile=aiw3-devnet
 
 print_step "Step 5: Faucet Integration Guide"
-print_info "To get test tokens for AIW3 devnet, you can use the faucet:"
-echo -e "${BLUE}Faucet URL: $AIW3_FAUCET_ENDPOINT${NC}"
+print_info "AIW3 Devnet endpoints and services:"
 echo -e "${BLUE}RPC Endpoint: $AIW3_RPC_ENDPOINT${NC}"
+echo -e "${BLUE}API Endpoint: $AIW3_API_ENDPOINT${NC}"
+echo -e "${BLUE}Faucet URL: $AIW3_FAUCET_ENDPOINT${NC}"
 echo ""
-print_info "Example faucet request (replace with your test address):"
+print_info "To get test tokens for AIW3 devnet, you can use the faucet:"
 echo -e "${YELLOW}curl -X POST $AIW3_FAUCET_ENDPOINT/request \\"
 echo -e "  -H 'Content-Type: application/json' \\"
 echo -e "  -d '{\"address\": \"aiw3...\", \"amount\": \"1000000\"}'"
 echo -e "${NC}"
+echo ""
+print_info "You can also check account balances via the API:"
+echo -e "${YELLOW}curl $AIW3_API_ENDPOINT/cosmos/bank/v1beta1/balances/aiw3...${NC}"
 
 print_step "Step 6: Validate Configuration"
 print_info "Validating the AIW3 devnet configuration..."
@@ -151,21 +168,29 @@ $CLI_BINARY --profile=aiw3-devnet --dry-run
 print_step "Step 8: Run Load Test Options"
 echo -e "${BLUE}You can now run load tests using any of these methods:${NC}"
 echo ""
-echo -e "${YELLOW}1. Using the profile:${NC}"
+echo -e "${YELLOW}1. Using the profile (multi-endpoint):${NC}"
 echo -e "   $CLI_BINARY --profile=aiw3-devnet"
 echo ""
-echo -e "${YELLOW}2. Quick benchmark:${NC}"
+echo -e "${YELLOW}2. Quick benchmark (single endpoint):${NC}"
 echo -e "   $CLI_BINARY --benchmark=quick --endpoints=$AIW3_RPC_ENDPOINT"
 echo ""
-echo -e "${YELLOW}3. Custom parameters:${NC}"
+echo -e "${YELLOW}3. Multi-endpoint testing:${NC}"
 echo -e "   $CLI_BINARY \\"
-echo -e "     --endpoints=$AIW3_RPC_ENDPOINT \\"
+echo -e "     --endpoints=\"$AIW3_RPC_ENDPOINT,$AIW3_API_ENDPOINT\" \\"
 echo -e "     --client-factory=aiw3defi-bank-send \\"
 echo -e "     --duration=30s \\"
 echo -e "     --rate=50 \\"
 echo -e "     --connections=2"
 echo ""
-echo -e "${YELLOW}4. Interactive mode:${NC}"
+echo -e "${YELLOW}4. Single RPC endpoint testing:${NC}"
+echo -e "   $CLI_BINARY \\"
+echo -e "     --endpoints=$AIW3_RPC_ENDPOINT \\"
+echo -e "     --client-factory=aiw3defi-bank-send \\"
+echo -e "     --duration=30s \\"
+echo -e "     --rate=100 \\"
+echo -e "     --connections=3"
+echo ""
+echo -e "${YELLOW}5. Interactive mode:${NC}"
 echo -e "   $CLI_BINARY --interactive"
 
 print_step "Step 9: Advanced Testing Scenarios"
@@ -194,15 +219,19 @@ print_step "Step 11: Troubleshooting"
 echo -e "${BLUE}Common troubleshooting steps:${NC}"
 echo ""
 echo -e "${YELLOW}1. Check endpoint connectivity:${NC}"
-echo -e "   $CLI_BINARY --check-endpoints --endpoints=$AIW3_RPC_ENDPOINT"
+echo -e "   $CLI_BINARY --check-endpoints --endpoints=\"$AIW3_RPC_ENDPOINT,$AIW3_API_ENDPOINT\""
 echo ""
-echo -e "${YELLOW}2. Enable debug logging:${NC}"
+echo -e "${YELLOW}2. Test individual endpoints:${NC}"
+echo -e "   $CLI_BINARY --check-endpoints --endpoints=$AIW3_RPC_ENDPOINT"
+echo -e "   $CLI_BINARY --check-endpoints --endpoints=$AIW3_API_ENDPOINT"
+echo ""
+echo -e "${YELLOW}3. Enable debug logging:${NC}"
 echo -e "   $CLI_BINARY --profile=aiw3-devnet --log-level=debug"
 echo ""
-echo -e "${YELLOW}3. Test with minimal load:${NC}"
+echo -e "${YELLOW}4. Test with minimal load:${NC}"
 echo -e "   $CLI_BINARY --endpoints=$AIW3_RPC_ENDPOINT --rate=1 --duration=10s"
 echo ""
-echo -e "${YELLOW}4. Verify client factory:${NC}"
+echo -e "${YELLOW}5. Verify client factory:${NC}"
 echo -e "   $CLI_BINARY --list-factories"
 
 print_step "Docker Usage"
@@ -211,14 +240,21 @@ echo ""
 echo -e "${YELLOW}1. Build and start container:${NC}"
 echo -e "   docker-compose up -d cosmosloadtester-cli"
 echo ""
-echo -e "${YELLOW}2. Run load test in container:${NC}"
+echo -e "${YELLOW}2. Run multi-endpoint load test in container:${NC}"
+echo -e "   docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \\"
+echo -e "     --endpoints=\"$AIW3_RPC_ENDPOINT,$AIW3_API_ENDPOINT\" \\"
+echo -e "     --client-factory=aiw3defi-bank-send \\"
+echo -e "     --duration=30s \\"
+echo -e "     --rate=100"
+echo ""
+echo -e "${YELLOW}3. Run single endpoint test in container:${NC}"
 echo -e "   docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \\"
 echo -e "     --endpoints=$AIW3_RPC_ENDPOINT \\"
 echo -e "     --client-factory=aiw3defi-bank-send \\"
 echo -e "     --duration=30s \\"
 echo -e "     --rate=100"
 echo ""
-echo -e "${YELLOW}3. Use persistent profiles:${NC}"
+echo -e "${YELLOW}4. Use persistent profiles:${NC}"
 echo -e "   docker-compose exec cosmosloadtester-cli cosmosloadtester-cli --profile=aiw3-devnet"
 
 print_success "AIW3 devnet setup complete!"

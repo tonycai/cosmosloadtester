@@ -453,6 +453,27 @@ spec:
   --data-binary @-
 ```
 
+### Docker with AIW3 Devnet
+
+```bash
+# Run single endpoint AIW3 devnet test in Docker
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=100
+
+# Run multi-endpoint AIW3 devnet test in Docker
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io,https://devnet-api.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=100
+
+# Use the automated setup script in Docker
+docker-compose exec cosmosloadtester-cli /app/examples/aiw3-devnet-example.sh
+```
+
 ## 🔧 Core Feature Analysis
 
 ### 🌟 **Multi-Protocol Support**
@@ -728,12 +749,16 @@ cosmosloadtester/
 ├── server/              # Server implementation
 ├── pkg/                 # Go packages
 │   ├── loadtest/        # Load test abstractions
-│   └── httprpc/         # HTTP RPC client
+│   ├── httprpc/         # HTTP RPC client
+│   ├── errors/          # Structured error handling system
+│   ├── logger/          # Comprehensive logging framework
+│   └── recovery/        # Recovery and resilience patterns
 ├── clients/             # Client factory implementations
 │   ├── myabciapp/       # Sample client factory
 │   └── aiw3defi/        # AIW3 DeFi client factory
 ├── examples/            # CLI usage examples
-│   └── cli-examples.sh  # Demonstration scripts
+│   ├── cli-examples.sh  # Demonstration scripts
+│   └── aiw3-devnet-example.sh  # AIW3 devnet integration
 ├── config/              # Configuration profiles (mounted volume)
 ├── results/             # Test results output (mounted volume)
 ├── monitoring/          # Monitoring configuration
@@ -745,6 +770,7 @@ cosmosloadtester/
 ├── .dockerignore        # Docker build exclusions
 ├── CLI_README.md        # CLI-specific documentation
 ├── DOCKER_README.md     # Docker deployment guide
+├── INTEGRATION_SUMMARY.md  # Error handling & logging integration summary
 └── build/               # Build artifacts
 ```
 
@@ -970,6 +996,7 @@ The cosmosloadtester includes built-in support for AIW3 devnet with specialized 
 | Service | URL | Description |
 |---------|-----|-------------|
 | **RPC Endpoint** | `https://devnet-rpc.aiw3.io` | Main RPC endpoint for transactions |
+| **API Endpoint** | `https://devnet-api.aiw3.io` | REST API for queries and data |
 | **Faucet Server** | `https://devnet-faucet.aiw3.io` | Get test tokens for development |
 
 ### Getting Test Tokens
@@ -981,6 +1008,9 @@ To get test tokens for AIW3 devnet, use the faucet service:
 curl -X POST https://devnet-faucet.aiw3.io/request \
   -H 'Content-Type: application/json' \
   -d '{"address": "aiw3...", "amount": "1000000"}'
+
+# Check account balance via API
+curl https://devnet-api.aiw3.io/cosmos/bank/v1beta1/balances/aiw3...
 ```
 
 ### AIW3-Specific Client Factories
@@ -991,7 +1021,7 @@ curl -X POST https://devnet-faucet.aiw3.io/request \
 ### AIW3 Load Testing Examples
 
 ```bash
-# High-throughput DeFi testing
+# Single endpoint high-throughput DeFi testing
 ./bin/cosmosloadtester-cli \
   --endpoints="https://devnet-rpc.aiw3.io" \
   --client-factory="aiw3defi-bank-send" \
@@ -1000,7 +1030,16 @@ curl -X POST https://devnet-faucet.aiw3.io/request \
   --connections=5 \
   --broadcast-method=async
 
-# Latency measurement
+# Multi-endpoint load balancing test
+./bin/cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io,https://devnet-api.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=60s \
+  --rate=500 \
+  --connections=3 \
+  --broadcast-method=sync
+
+# Latency measurement (single endpoint)
 ./bin/cosmosloadtester-cli \
   --endpoints="https://devnet-rpc.aiw3.io" \
   --client-factory="aiw3defi-bank-send" \
@@ -1009,7 +1048,7 @@ curl -X POST https://devnet-faucet.aiw3.io/request \
   --connections=1 \
   --broadcast-method=commit
 
-# Create and use AIW3 profile
+# Create and use AIW3 profile (includes both endpoints)
 ./bin/cosmosloadtester-cli --generate-template=aiw3defi-test
 ./bin/cosmosloadtester-cli --profile=aiw3defi-test
 ```
@@ -1017,9 +1056,16 @@ curl -X POST https://devnet-faucet.aiw3.io/request \
 ### Docker with AIW3 Devnet
 
 ```bash
-# Run AIW3 devnet test in Docker
+# Run single endpoint AIW3 devnet test in Docker
 docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
   --endpoints="https://devnet-rpc.aiw3.io" \
+  --client-factory="aiw3defi-bank-send" \
+  --duration=30s \
+  --rate=100
+
+# Run multi-endpoint AIW3 devnet test in Docker
+docker-compose exec cosmosloadtester-cli cosmosloadtester-cli \
+  --endpoints="https://devnet-rpc.aiw3.io,https://devnet-api.aiw3.io" \
   --client-factory="aiw3defi-bank-send" \
   --duration=30s \
   --rate=100

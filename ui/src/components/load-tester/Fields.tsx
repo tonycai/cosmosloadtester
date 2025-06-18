@@ -50,7 +50,7 @@ export const fields: FormField[] = [
         name: 'endpoints',
         label: 'Endpoints',
         required: 'Endpoint(s) required to run load test.',
-        info: 'A comma-separated list of URLs indicating Tendermint WebSockets RPC endpoints to which to connect. Maps to --endpoints in tm-load-test.',
+        info: 'A comma-separated list of URLs indicating Tendermint RPC endpoints to which to connect. Supports WebSocket (ws://, wss://) and HTTP (http://, https://) protocols. Maps to --endpoints in tm-load-test.',
         fieldType: FieldType.LIST_BASED,
     },
     {

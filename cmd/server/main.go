@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	"github.com/orijtech/cosmosloadtester/clients/myabciapp"
+	"github.com/orijtech/cosmosloadtester/clients/aiw3defi"
 	loadtestpb "github.com/orijtech/cosmosloadtester/proto/orijtech/cosmosloadtester/v1"
 	"github.com/orijtech/cosmosloadtester/server"
 	"github.com/orijtech/cosmosloadtester/ui"
@@ -41,7 +42,7 @@ func main() {
 		logrus.Fatalf("failed to register client factories: %v", err)
 	}
 
-	s := server.NewServer()
+	s := server.NewHybridServer()
 
 	// Start the gRPC server. We don't really care what port it listens on because it will be wrapped
 	// by grpc-gateway.
@@ -116,9 +117,18 @@ func main() {
 func registerClientFactories() error {
 	cdc := codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
 	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
+	
+	// Register the default test client factory
 	cosmosClientFactory := myabciapp.NewCosmosClientFactory(txConfig)
 	if err := loadtest.RegisterClientFactory("test-cosmos-client-factory", cosmosClientFactory); err != nil {
 		return fmt.Errorf("failed to register client factory %s: %w", "test-cosmos-client-factory", err)
 	}
+	
+	// Register the AIW3 DeFi client factory
+	aiw3defiClientFactory := aiw3defi.NewAIW3DefiClientFactory(txConfig)
+	if err := loadtest.RegisterClientFactory("aiw3defi-bank-send", aiw3defiClientFactory); err != nil {
+		return fmt.Errorf("failed to register client factory %s: %w", "aiw3defi-bank-send", err)
+	}
+	
 	return nil
 }
